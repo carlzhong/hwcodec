@@ -1,0 +1,12 @@
+#ifndef FFMPEG_MAIN_H
+#define FFMPEG_MAIN_H
+//ffmpeg主程序相关
+int ffmpeg_main(int argc, char **argv);
+void  ffmpeg_set_terminate(int sig);
+
+//实时编码相关
+int realtimeEnc_init(float fps, int width, int height);
+int realtimeEnc_proc();
+#endif
+
+

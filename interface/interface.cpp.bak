@@ -1,0 +1,462 @@
+#include <jni.h>
+#include <stdlib.h>
+#include <android/log.h>
+#include <pthread.h>
+#include <unistd.h>
+#include <errno.h>
+#include <string.h> 
+#include <sys/wait.h>
+extern "C" {
+#include "ffmpeg.h"
+}
+#include "CThread.h"
+const char* const gClassName = "com.iqiyi.share.utils.VideoUtil";
+
+void* startTranscode(int argc, char **argv)
+{
+	pid_t pid, pid_get;
+	int err;
+//	for (int i =0;i<argc;i++)
+//		__android_log_print(ANDROID_LOG_INFO, "tt", argv[i]); 
+/*	char* argv[] = {"ffmpeg","-i","/sdcard/1.mp4",/*"/sdcard/DCIM/Camera/20121029_211746.mp4","-f","adts","-vn","-acodec","aac","-ar","44100","-ac","2","-strict","-2","-y","/sdcard/middle.aac"}; */
+	if ((pid =  fork()) < 0)
+	{
+		__android_log_print(ANDROID_LOG_INFO, "tt", "fork ffmpeg process failed"); 
+		return NULL;
+	} else if (pid > 0) { //parent
+        __android_log_print(ANDROID_LOG_INFO, "tt", "fork child success,wait");
+		pid_get = wait(NULL);
+		__android_log_print(ANDROID_LOG_INFO, "tt", "fork child success,parent return is  %d", pid_get);
+		return NULL;
+	} else {// child*/
+	    __android_log_print(ANDROID_LOG_INFO, "tt", "child process ,start to exec ffmpeg");
+		ffmpeg_main(argc,argv);
+		__android_log_print(ANDROID_LOG_INFO, "tt", "ffmpeg exit");
+		exit(0);
+	}
+	return NULL;
+/*	char* argv[] = {"ffmpeg","-i","/sdcard/DCIM/Camera/20121019_145928.mp4","-f","mp4","-r","15","-vf","scale=480:360","-c:v","libx264","-preset","ultrafast","-x264opts","bitrate=600:threads=auto","-c:a","copy","-strict","-2","-y","/sdcard/360p_ultrafast_1019_145928_650k.mp4"};
+	ffmpeg_main(21,argv);
+*/
+/*
+	char* argv[] = {"ffmpeg","-i","/sdcard/a6d91f58e97c16ea1ff3ad63f38a8137.mp4","-f","mp4","-r","15","-vf","scale=480:-1","-vcodec","mpeg4","-c:a","copy","-strict","-2","-y","/sdcard/out.mp4"};
+	ffmpeg_main(17,argv);
+*/
+}
+/*
+static int nativeGetDuration(JNIEnv *env, jstring VideoName)
+{
+	AVFormatContext*	mMovieFile;	
+	AVFormatParameters	params;
+	int64_t             mDuration;
+	int					msec;
+	const char *Video = env->GetStringUTFChars(VideoName, NULL);
+	memset(&params, 0, sizeof(AVFormatParameters));
+    params.prealloced_context = 1;
+    params.width = 0;
+    params.height= 0;
+    params.time_base= (AVRational){1, 25};
+    params.pix_fmt = PIX_FMT_NONE;	
+	if(av_open_input_file(&mMovieFile, Video, NULL, 0, &params) != 0) {
+		__android_log_print(ANDROID_LOG_INFO, "tt", "av_open_input_file false");
+		//removed by wmw, 2012-03-16, for MEDIA_ERROR
+		//sPlayer->mbCancel = 1;
+		return -1;
+	}
+	mDuration =  mMovieFile->duration;
+	msec = mDuration / 1000;
+	__android_log_print(ANDROID_LOG_INFO, "tt", "mDuration=%lld,msec=%d",mDuration,msec);
+	env->ReleaseStringUTFChars(VideoName, Video);
+	return msec;
+}
+*/
+static void nativeVideoCut(JNIEnv *env, jobject thiz, jstring InputFile, jstring StartTime, jstring VideoLength, jstring OutputFile)
+{
+	pthread_t       ffmpegThread;
+	void            *tret;
+	int 			err;
+	char mInput[100];
+	char mOutput[100];
+	char mStart[10];
+	char mLength[10];
+	const char *Input = env->GetStringUTFChars(InputFile, NULL);
+	const char *Output = env->GetStringUTFChars(OutputFile, NULL);	
+	const char *Start = env->GetStringUTFChars(StartTime, NULL);	
+	const char *Length = env->GetStringUTFChars(VideoLength, NULL);
+	__android_log_print(ANDROID_LOG_INFO, "tt", "transcode start");
+	strcpy(mInput,Input);
+	strcpy(mOutput,Output);	
+	strcpy(mStart,Start);
+	strcpy(mLength,Length);
+	int starttimeInt = (int)atoi(mStart);
+	int timeDurInt = (int)atoi(mLength);
+	starttimeInt/=1000;
+	timeDurInt/=1000;
+	sprintf(mStart,"%d",(starttimeInt));
+	sprintf(mLength,"%d",(timeDurInt));
+	__android_log_print(ANDROID_LOG_INFO, "tt", "mInput=%s,mStart=%s,mLength=%s,mOutput=%s, %d",mInput,mStart,mLength,mOutput,starttimeInt);
+
+	s_FFMPEGSTRUCT a ={13,"ffmpeg","-ss",mStart,"-i",mInput,"-vcodec","copy","-acodec","copy","-t",mLength,"-y",mOutput};
+    CThread *handle = ((CThread *)(CThread::__ThreadConstructer()));
+	while (handle->GetStateFlag() == RUNNING)
+		usleep(1200);
+	handle->StartThread(&a);
+
+
+
+/*	
+	int argc = 16 ;
+	char* argv[] = {"ffmpeg","-ss",mStart,"-i",mInput,"-vcodec","copy","-acodec","copy","-t",mLength,"-y",mOutput};
+	argc = 13;
+	startTranscode(argc,argv);
+*/
+	env->ReleaseStringUTFChars(InputFile, Input);
+	env->ReleaseStringUTFChars(OutputFile, Output);
+	env->ReleaseStringUTFChars(StartTime, Start);
+	env->ReleaseStringUTFChars(VideoLength, Length);
+	return;
+}
+
+static void nativeTransFormatToMp4(JNIEnv *env, jobject thiz, jstring InputFile, jstring OutputFile)
+{
+	pthread_t       ffmpegThread;
+	void            *tret;
+	int 			err;
+	char mInput[100];
+	char mOutput[100];
+
+	const char *Input = env->GetStringUTFChars(InputFile, NULL);
+	const char *Output = env->GetStringUTFChars(OutputFile, NULL);	
+
+	__android_log_print(ANDROID_LOG_INFO, "tt", "transcode start");
+	strcpy(mInput,Input);
+	strcpy(mOutput,Output);	
+	__android_log_print(ANDROID_LOG_INFO, "tt", "mInput=%s,mOutput=%s",mInput,mOutput);
+
+	s_FFMPEGSTRUCT a ={9,"ffmpeg","-i",mInput,"-vcodec","copy","-acodec","copy","-y",mOutput};
+    CThread *handle = ((CThread *)(CThread::__ThreadConstructer()));
+	while (handle->GetStateFlag() == RUNNING)
+		usleep(1200);
+	handle->StartThread(&a);
+/*	
+	int argc = 16 ;
+	char* argv[] = {"ffmpeg","-ss",mStart,"-i",mInput,"-vcodec","copy","-acodec","copy","-t",mLength,"-y",mOutput};
+	argc = 13;
+	startTranscode(argc,argv);
+*/
+	env->ReleaseStringUTFChars(InputFile, Input);
+	env->ReleaseStringUTFChars(OutputFile, Output);
+	return;
+}
+
+
+
+static void nativeChangeVolume(JNIEnv *env, jobject thiz, jstring InputFile, jstring OutputFile, double InputVolume)
+{
+	pthread_t       ffmpegThread;
+	void            *tret;
+	int 			err;
+	char mInput[200];
+	char mOutput[200];	
+	char mInputVolume[100];
+	int volume = (int)(InputVolume * 256 + 0.5);	
+	sprintf(mInputVolume,"%d",(volume));
+	const char *Input = env->GetStringUTFChars(InputFile, NULL);
+	const char *Output = env->GetStringUTFChars(OutputFile, NULL);	
+	strcpy(mInput,Input);
+	strcpy(mOutput,Output);
+
+
+	CThread *handle = ((CThread *)(CThread::__ThreadConstructer()));
+/*
+	s_FFMPEGSTRUCT a ={8,"ffmpeg","-i",mInput,"-vn","-acodec","copy","-y",mMiddleAudio};    
+	while (handle->GetStateFlag() == RUNNING)
+		usleep(1200);
+	handle->StartThread(&a);
+*/
+
+	s_FFMPEGSTRUCT a2 ={11,"ffmpeg","-i",mInput,"-c:v","copy","-vol",mInputVolume,"-strict","-2","-y",mOutput};    
+
+	while (handle->GetStateFlag() == RUNNING)
+		usleep(1200);
+	handle->StartThread(&a2);
+
+
+	env->ReleaseStringUTFChars(InputFile, Input);
+	env->ReleaseStringUTFChars(OutputFile, Output);
+	__android_log_print(ANDROID_LOG_INFO, "tt", "ChangeVolume finished");
+    return;	
+}
+
+static void nativeBackgroundAudio(JNIEnv *env, jobject thiz, jstring InputFile, jstring BackgroundAudio, jstring OutputFile, double InputVolume)
+{
+	pthread_t       ffmpegThread;
+	void            *tret;
+	int 			err;
+	char mInput[200];
+	char mOutput[200];
+	char mAudio[200];
+	char mFixAudio[400]="amovie=";
+	char mInputVolume[100];
+	char mBackgroundVolume[100];	
+
+	double BackgroundVolume=1-InputVolume;
+	InputVolume = InputVolume*2;
+	sprintf(mInputVolume,"%llf",(InputVolume));
+	sprintf(mBackgroundVolume,"%llf",(BackgroundVolume));
+
+	const char *Input = env->GetStringUTFChars(InputFile, NULL);
+	const char *Output = env->GetStringUTFChars(OutputFile, NULL);	
+	const char *Audio = env->GetStringUTFChars(BackgroundAudio, NULL);
+	
+	
+	strcpy(mInput,Input);
+	strcpy(mOutput,Output);
+	strcpy(mAudio,Audio);
+	strcat(mFixAudio,mInput);
+	strcat(mFixAudio,",aresample=44100,volume=");
+	strcat(mFixAudio,mInputVolume);
+	strcat(mFixAudio,",aconvert=s16:stereo [a0];amovie=");
+ 
+	strcat(mFixAudio,mAudio);
+	strcat(mFixAudio,",aresample=44100,volume=");
+	strcat(mFixAudio,mBackgroundVolume);
+	strcat(mFixAudio,",aconvert=s16:stereo [a1];[a0][a1] amerge=inputs=2");
+
+
+	__android_log_print(ANDROID_LOG_INFO, "tt", "mAudio=%s",mAudio);
+	__android_log_print(ANDROID_LOG_INFO, "tt", "mFixAudio=%s",mFixAudio);
+	CThread *handle = ((CThread *)(CThread::__ThreadConstructer()));
+/*
+	s_FFMPEGSTRUCT a ={8,"ffmpeg","-i",mInput,"-vn","-acodec","copy","-y",mMiddleAudio};    
+	while (handle->GetStateFlag() == RUNNING)
+		usleep(1200);
+	handle->StartThread(&a);
+*/
+	s_FFMPEGSTRUCT a2 ={17,"ffmpeg","-i",mInput,"-f","lavfi","-i",mFixAudio,"-c:a","aac","-ac","2","-c:v","copy","-strict","-2","-y",mOutput};    
+	while (handle->GetStateFlag() == RUNNING)
+		usleep(1200);
+	handle->StartThread(&a2);
+
+//-i 20121127_112652.mp4 -f lavfi -i "amovie=20121127_112652.mp4 [a0];amovie=backgroundaudio.aac [a1];[a0][a1] amerge=inputs=2" -c:a aac -ac 2 -c:v copy -strict -2 -y output.mp4
+/*
+	s_FFMPEGSTRUCT a ={13,"ffmpeg","-i",mInput,"-vn","-acodec","copy","-y",mMiddleAudio,"-an","-c:v","copy","-y",mOutputVideo};    
+	while (handle->GetStateFlag() == RUNNING)
+		usleep(1200);
+	handle->StartThread(&a);
+
+	s_FFMPEGSTRUCT a1 ={13,"ffmpeg","-i",mAudio,"-c:a","aac","-ac","2","-ar","48000","-strict","-2","-y",mBackgroundAudio};    
+	while (handle->GetStateFlag() == RUNNING)
+		usleep(1200);
+	handle->StartThread(&a1);
+
+	s_FFMPEGSTRUCT a2 ={15,"ffmpeg","-f","lavfi","-i",mFixAudio,"-c:a","aac","-ac","2","-ar","44100","-strict","-2","-y",mOutputAudio};    
+	while (handle->GetStateFlag() == RUNNING)
+		usleep(1200);
+	handle->StartThread(&a2);
+/*
+	s_FFMPEGSTRUCT a3 ={8,"ffmpeg","-i",mInput,"-an","-c:v","copy","-y",mOutputVideo};    
+	while (handle->GetStateFlag() == RUNNING)
+		usleep(1200);
+	handle->StartThread(&a3);
+*/
+/*
+	s_FFMPEGSTRUCT a4 ={15,"ffmpeg","-i",mOutputVideo,"-i",mOutputAudio,"-c:v","copy","-c:a","copy","-absf","aac_adtstoasc","-f","mp4","-y",mOutput};    
+	while (handle->GetStateFlag() == RUNNING)
+		usleep(1200);
+	handle->StartThread(&a4);
+
+
+/*
+	int argc = 16 ;
+
+	char* argv[] = {"ffmpeg","-i",mInput,"-f","adts","-vn","-acodec","aac","-ac","2","-ar","44100","-strict","-2","-y",mMiddleAudio};
+	startTranscode(argc,argv);
+	
+	char* argv4[] ={"ffmpeg","-i",mAudio,"-c:a","aac","-ac","2","-ar","44100","-strict","-2","-y",mBackgroudAudio};
+	argc = 13;
+	startTranscode(argc,argv4);
+
+	char* argv1[] ={"ffmpeg","-f","lavfi","-i",mFixAudio,"-c:a","aac","-ac","2","-ar","44100","-strict","-2","-y",mOutputAudio};
+	argc = 15;
+	startTranscode(argc,argv1);
+/*
+	char* argv2[] = {"ffmpeg","-i",mInput,"-c:v","copy","-an","-y",mOutputVideo};
+	argc = 8 ;
+	startTranscode(argc,argv2);
+	
+	char* argv3[] = {"ffmpeg","-i",mOutputVideo,"-i",mOutputAudio,"-c:v","copy","-c:a","copy","-absf","aac_adtstoasc","-f","mp4","-y",mOutput};
+	argc = 15 ;
+	startTranscode(argc,argv3);
+*/
+	env->ReleaseStringUTFChars(InputFile, Input);
+	env->ReleaseStringUTFChars(OutputFile, Output);
+	env->ReleaseStringUTFChars(BackgroundAudio, Audio); 
+	//env->ReleaseStringUTFChars(SdcardPath, Sdcard);
+	__android_log_print(ANDROID_LOG_INFO, "tt", "AddAudio finished");
+    return;	
+}
+
+static void nativeThumbnail(JNIEnv *env, jobject thiz, jstring InputFile, jstring OutputFile)
+{
+	pthread_t       ffmpegThread;
+	void            *tret;
+	int 			err;
+	char mInput[100];
+	char mOutput[100];
+	const char *Input = env->GetStringUTFChars(InputFile, NULL);
+	const char *Output = env->GetStringUTFChars(OutputFile, NULL);
+	strcpy(mInput,Input);
+	strcpy(mOutput,Output);
+	__android_log_print(ANDROID_LOG_INFO, "tt", "transcode start");
+	s_FFMPEGSTRUCT a ={9,"ffmpeg","-i",mInput,"-vf","thumbnail","-vframes","1","-y",mOutput};
+    CThread *handle = ((CThread *)(CThread::__ThreadConstructer()));
+	while (handle->GetStateFlag() == RUNNING)
+		usleep(1200);
+	handle->StartThread(&a);
+/*
+	int argc = 16 ;
+	char* argv[] = {"ffmpeg","-i",mInput,"-vf","thumbnail","-vframes","1","-y",mOutput};
+	argc = 9;
+	startTranscode(argc,argv);
+*/
+	env->ReleaseStringUTFChars(InputFile, Input);
+	env->ReleaseStringUTFChars(OutputFile, Output);
+	return;
+}
+
+
+
+
+static void nativeModule(JNIEnv *env, jobject thiz, jstring InputFile, jstring ModuleName, jstring OutputFile)
+{
+	pthread_t       ffmpegThread;
+	void            *tret;
+	int 			err;
+	char mInput[100];
+	char mOutput[100];
+	char mModule[200]="movie=";
+	char *lastopt=" [FlashAuto];[in][FlashAuto] overlay=0:0 [out]";
+	const char *Input = env->GetStringUTFChars(InputFile, NULL);
+	const char *Output = env->GetStringUTFChars(OutputFile, NULL);
+	const char *Module = env->GetStringUTFChars(ModuleName, NULL);
+	strcpy(mInput,Input);
+	strcpy(mOutput,Output);	
+	strcat(mModule,Module);
+	strcat(mModule,lastopt);
+	__android_log_print(ANDROID_LOG_INFO, "tt", "transcode start");
+	s_FFMPEGSTRUCT a ={19,"ffmpeg","-i",mInput,"-vf",mModule,"-c:v","libx264","-threads", "6","-preset","ultrafast","-x264opts","bitrate=1000","-c:a","copy","-strict","-2","-y",mOutput};
+    CThread *handle = ((CThread *)(CThread::__ThreadConstructer()));
+	while (handle->GetStateFlag() == RUNNING)
+		usleep(1200);
+	handle->StartThread(&a);
+
+/*
+	int argc = 16 ;
+	char* argv[] = {"ffmpeg","-i",mInput,"-vf",mModule,"-c:v","libx264","-threads", "6","-preset","ultrafast","-x264opts","bitrate=1000","-c:a","copy","-strict","-2","-y",mOutput};
+	argc = 19;
+	startTranscode(argc,argv);
+*/
+	env->ReleaseStringUTFChars(InputFile, Input);
+	env->ReleaseStringUTFChars(OutputFile, Output);
+	env->ReleaseStringUTFChars(ModuleName, Module); 
+
+//./ffmpeg -f lavfi -i "amovie=middle.aac [a0];amovie=gongti.aac [a1];[a0][a1] amerge=inputs=2" -c:a aac -ac 2 -strict -2 -y output.aac
+//./ffmpeg  -i 20121108_163530.mp4 -c:v copy -an -y middle.mp4
+//./ffmpeg  -i middle.mp4 -i output.aac -acodec copy -vcodec copy -absf aac_adtstoasc -f mp4 -y output.mp4
+//./ffmpeg -i a6d91f58e97c16ea1ff3ad63f38a8137.mp4 -vcodec copy -acodec copy -ss 00:00:00 -t 00:01:07 -y partmovie.mp4
+//./ffmpeg -i 20121121_160505.mp4 -vf thumbnail=180 -frames:v 1 out.png
+//./ffmpeg -i MovieNew.m4v -vf "movie=./../FlashAuto.png [FlashAuto]; [in][FlashAuto] overlay=10:10 [out]" -strict -2 -y 888.m4v
+    
+    
+/*
+	pthread_create(&ffmpegThread, NULL, startTranscode, NULL);
+	err = pthread_join(ffmpegThread, &tret);
+	if (err != 0)
+		__android_log_print(ANDROID_LOG_INFO, "tt", "can't join with thread");
+    if (((int)tret) != 0)
+		__android_log_print(ANDROID_LOG_INFO, "tt", "thread finished incorrect");
+    else
+		__android_log_print(ANDROID_LOG_INFO, "tt", "transcode complete");
+*/
+    return;	
+#if 0
+	char* argv[] = {"ffmpeg","-i","/sdcard/VIDEO0004.3gp","-s","200x150","-ss","1","-f","image2","-vframes","1","/sdcard/test.jpg"};
+	ffmpeg_main(12,argv);
+#else
+
+/*
+	char* argv[] = {"ffmpeg","-i","/sdcard/DCIM/Camera/20121023_150606.mp4","-f","mp4","-r","25","-c:v","libx264","-preset","faster","-c:a","copy","-strict","-2","-y","/sdcard/out.mp4"};
+	ffmpeg_main(17,argv);
+*/
+
+/*
+	char* argv[] = {"ffmpeg","-i","/sdcard/DCIM/Camera/20121023_150606.mp4","-f","mp4","-vf","scale=640:-1","-c:v","libx264","-x264opts","bitrate=1000:8x8dct:me=hex:subq=6:deadzone_intra=21:deadzone_inter=21:nr=100:bframes=7:frameref=3:no_mixed_refs:partitions=all:weight_b:fast_pskip:threads=auto:direct_pred=auto", "-c:a","copy","-strict","-2","-y","/sdcard/out.mp4"};
+	ffmpeg_main(17,argv);
+*/
+
+/*
+	char* argv[] = {"ffmpeg","-i","/sdcard/DCIM/Camera/20121019_145928.mp4","-f","mp4","-vf","scale=640:-1","-vcodec","mpeg4","-acodec","aac","-ar","44100","-ac","2","-ab","64k","-strict","-2","/sdcard/out.mp4"};
+*/
+	
+#endif
+}
+
+static void nativeStop()
+{
+   ((CThread *)(CThread::__ThreadConstructer()))->StopThread();
+   return;
+}
+
+
+static const JNINativeMethod gMethods[] = {
+{"VideoCut", 		"(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V",			(void *)nativeVideoCut},
+{"TransFormatToMp4","(Ljava/lang/String;Ljava/lang/String;)V",												(void *)nativeTransFormatToMp4},
+{"BackgroundAudio", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;D)V", 							(void *)nativeBackgroundAudio},
+{"ChangeVolume", 	"(Ljava/lang/String;Ljava/lang/String;D)V", 											(void *)nativeChangeVolume},
+{"Thumbnail", 		"(Ljava/lang/String;Ljava/lang/String;)V", 												(void *)nativeThumbnail},
+{"Module", 			"(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V", 							(void *)nativeModule},
+{"Stop", 			"()V",														 							(void *)nativeStop},
+};
+
+int registerMethods(JNIEnv* env)
+{
+    jclass clazz;
+	jint result = JNI_ERR;
+    clazz = env->FindClass(gClassName);
+    if (clazz == NULL)
+	{
+        goto end;
+    }
+
+    if (env->RegisterNatives(clazz, gMethods, sizeof(gMethods)/sizeof(gMethods[0])) != JNI_OK) 
+	{
+        goto end;
+    }
+
+	result = JNI_OK;
+	__android_log_print(ANDROID_LOG_INFO, "tt", "registerMethods");
+end:
+	return result;
+}
+
+jint JNI_OnLoad(JavaVM* vm, void* reserved) 
+{
+    JNIEnv* env = NULL;
+    jint result = JNI_ERR;
+
+    if (vm->GetEnv((void**) &env, JNI_VERSION_1_4) != JNI_OK) 
+	{
+        goto end;
+    }
+
+    if(registerMethods(env) != JNI_OK) 
+	{
+    	goto end;
+    }
+
+    result = JNI_VERSION_1_4;
+	__android_log_print(ANDROID_LOG_INFO, "tt", "JNI_OnLoad");
+end:
+    return result;
+}
